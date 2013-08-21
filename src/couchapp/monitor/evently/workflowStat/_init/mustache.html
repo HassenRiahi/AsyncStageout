@@ -1,12 +1,12 @@
 <div style="text-align: center">
 <h3 id="title"></h3>
 <table>
-	<tr>
-		<td><h4>JOB STATUS BY WORKFLOW</h4></td>
-			</tr>
-		<tr>
-		<td><div id="pie"></div> </td>
-			</tr>
+        <tr>
+                <td><h4>JOB STATUS BY WORKFLOW</h4></td>
+                        </tr>
+                <tr>
+                <td><div id="pie"></div> </td>
+                        </tr>
 </table>
 </div>
 
@@ -36,69 +36,17 @@ var user = get['index'];
 
 $(document).ready(function() {
           // put all your jQuery goodness in here.
-	$("#title").html("User "+user+" information page");
+        $("#title").html("Workflow "+user+" information page");
 });
 
-var input = [];
-input.keys = [];
-input.data = [];
-input.totdata = [];
-input.dataop = [];
-input.dataip = [];
-input.status = ["done","failed","other"];
-
 var inputs = [];
-inputs.url = url+"/workflowStat.html";
+inputs.url = url+"/totbyWorkflow.html";
 inputs.data = [];
 inputs.labels = [];
 inputs.info = [];
 inputs.stacked = [];
 inputs.layers = ["done","failed","killed","new", "acquired", "resubmitted"];inputs.status = ["done","failed","killed", "new", "acquired", "resubmitted"];
 
-
-function settotdata(intotdata, inouterpie, ininnerpies, inkeys){
-        input.totdata = intotdata;
-	input.dataop = inouterpie;
-	input.dataip = ininnerpies;
-	input.keys = inkeys;
-}
-
-input.updateTot = function(){
-		var DB = $.couch.db(dbname);
-		DB.view('monitor/filesCountByUser', {
-		      group_level: 2,
-		      startkey: [user, null],
-                      endkey: [user, "\ufff0"],
-		      success: function(data) {
-				//var labels = [];
-				//var dati = [];
-				//var info = [];
-                                var totdata = [0,0,0];
-				var outerpie = [];
-				var innerpies = [];
-				var keys = [];					
-
-		      		for (i in data.rows) {
-		                        
-					var value = data.rows[i].value.total;
-		                        //var outerpieinfo = {"key" : data.rows[i].key[1],
-  					//		     "value": data.rows[i].value.total}
-					//var innerpieinfo = { "key": data.rows[i].key[1],
-                                        //                   "value": [data.rows[i].value.done, data.rows[i].value.done, data.rows[i].value.other]};
-					//dati.push(rowinfo);
-					totdata[0] += data.rows[i].value.done;
-					totdata[1] += data.rows[i].value.failed;
-					totdata[2] += data.rows[i].value.other;
-					keys.push(data.rows[i].key[1]);
-					outerpie.push(value);
-					innerpies.push([data.rows[i].value.done, data.rows[i].value.failed, data.rows[i].value.other]);
-
-					}
-				//setDataArray(dati, totdata);
-				settotdata(totdata, outerpie, innerpies, keys);
-		      		}
-	      });
-}
 
 inputs.popolate = function(){
                 inputs.stacked = [];
@@ -121,7 +69,7 @@ inputs.popolate = function(){
                 var rowinfo = "WorkFlow: "+response[i].key+" Jobs: "+response[i].value.total;
 
 
-                if (response[i].value.user==user){
+                if (response[i].key==user){
 
                 donefile.push(response[i].value.done);
                 failfile.push(response[i].value.failed);
@@ -130,9 +78,20 @@ inputs.popolate = function(){
                 resubfile.push(response[i].value.resubmitted);
                 acqfile.push(response[i].value.acquired);
 
-                inputs.labels.push(response[i].key);
-                inputs.data.push(value);
-                inputs.info.push(rowinfo);
+                inputs.labels.push(value);
+                inputs.info.push("Done jobs");
+                inputs.info.push("Failed jobs");
+                inputs.info.push("New jobs");
+                inputs.info.push("Killed jobs");
+                inputs.info.push("Resubmitted jobs");
+                inputs.info.push("Acquired jobs");  
+                inputs.data.push(response[i].value.done);
+                inputs.data.push(response[i].value.failed);
+                inputs.data.push(response[i].value.new);
+                inputs.data.push(response[i].value.killed);
+                inputs.data.push(response[i].value.resubmitted);
+                inputs.data.push(response[i].value.acquired); 
+                /*inputs.info.push(rowinfo);*/
                 }        }
                 inputs.stacked.push(donefile);
                 inputs.stacked.push(failfile);
@@ -143,14 +102,19 @@ inputs.popolate = function(){
                 
 }
 
+
+
 function drawchart(){
-	input.updateTot();
         inputs.popolate();
-        setTimeout(function() stackedBarH("pie", inputs) , 500 );
-      /*  setTimeout(function() doublepie("pie2", input) , 500 );*/
+        setTimeout(function() fullpieActive2("pie", inputs) , 500 );
 }
 
 drawchart();
 setInterval(function() drawchart(), 60000 );
 
 </script>
+
+
+
+
+

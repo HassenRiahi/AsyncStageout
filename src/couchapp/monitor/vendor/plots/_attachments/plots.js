@@ -255,7 +255,7 @@ function simpleActivePie(canvas, input) {
       h = 300,
       r = h / 2,
       textfont = "13px sans-serif",
-      fill = pv.colors("#2ca02c", "#d62728","#e7ba52"),
+      fill = pv.colors("#2ca02c", "#d62728", "#e7ba52"),
       selected = pv.colors("#2ca02c", "#d62728","#e7ba52");
 
  var root = new pv.Panel()
@@ -315,7 +315,7 @@ function simpleActivePie(canvas, input) {
   root.render();
 };
 
-function stackedBarH(canvas, input) {
+function stackedBarH(canvas, input, click ) {
 
 var tr = clone(input.stacked);
 tr = pv.transpose(tr);
@@ -352,7 +352,6 @@ var bar = layout.layer.add(pv.Bar)
     .height(y.range().band)
     .fillStyle(selected.by(pv.parent))
     .event("click", function(d) self.location = input.url+"?index="+input.labels[this.index])
-    .event("mouseover", function() layout.i(this.index))
     .strokeStyle(function() layout.i() == this.index ? "black" : (this.fillStyle()));
 
 //Legends
