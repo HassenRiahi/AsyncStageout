@@ -7,6 +7,12 @@ function(newDoc, oldDoc, userCtx) {
     };
     var docOp = oldDoc ? (newDoc._deleted === true ? DOCOPS.delet : DOCOPS.modif) : DOCOPS.creat;
 
+    // Determines allowed users action
+    var allowedUser = true
+    if ((!newDoc.user || newDoc.user != userCtx.name) && (!oldDoc || oldDoc.user != userCtx.name || (newDoc.user && newDoc.user != oldDoc.user))){
+        allowedUser = false;
+    }
+
     // Function to get the user list of site/groups for the given role
     var getRole = function(role) {
         var roles = userCtx.roles;
@@ -42,7 +48,8 @@ function(newDoc, oldDoc, userCtx) {
     // The following rule aplies for all operation types
     var allowed = isGlobalAdm ||
                   matchesRole("operator", "group:aso") ||
-                  matchesRole("web-service", "group:facops");
+                  matchesRole("web-service", "group:facops")||
+                  allowedUser;
 
     // Throw if user not validated
     if (!allowed) {
