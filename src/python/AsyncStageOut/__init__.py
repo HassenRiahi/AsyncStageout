@@ -39,3 +39,19 @@ def execute_command(command):
     rc = proc.returncode
 
     return stdout, stderr, rc
+
+def getDNFromUserName(username):
+    """
+    Parse site string to know the fts server to use
+    """
+    dn = ''
+    site_db = SiteDBJSON()
+    try:
+       dn = site_db.userNameDn(username)
+    except IndexError:
+       log.error("user does not exist")
+       return dn
+    except RuntimeError:
+       log.error("SiteDB URL cannot be accessed")
+       return dn
+    return dn
