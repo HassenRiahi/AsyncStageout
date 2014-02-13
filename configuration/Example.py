@@ -31,6 +31,7 @@ teamName = "Your team name"
 credentialDir = "/tmp/credentials/"
 cache_area = "url_to_CS_cache"
 ui_script = '/afs/cern.ch/cms/LCG/LCG-2/UI/cms_ui_env.sh'
+tracking_timeout = 700
 
 config = Configuration()
 config.section_('General')
@@ -78,6 +79,7 @@ config.AsyncTransfer.schedAlgoDir = 'AsyncStageOut.SchedPlugins'
 config.AsyncTransfer.algoName = 'FIFOPriority'
 config.AsyncTransfer.config_couch_instance = couchUrl
 config.AsyncTransfer.cache_area = cache_area
+config.AsyncTransfer.tracking_timeout = tracking_timeout
 config.component_('DBSPublisher')
 config.DBSPublisher.pollInterval = 10
 config.DBSPublisher.publication_pool_size = 4

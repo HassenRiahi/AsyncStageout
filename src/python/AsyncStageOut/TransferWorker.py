@@ -183,6 +183,7 @@ class TransferWorker:
         self.factory = WMFactory(self.config.pluginDir, namespace = self.config.pluginDir)
         self.failures_reasons =  {}
         self.commandTimeout = 1200
+        self.tracking_timeout = self.config.tracking_timeout
 
     def __call__(self):
         """
@@ -524,17 +525,29 @@ class TransferWorker:
             self.logger.debug("Link to Log %s" %logs_pool)
             self.logger.debug("Current process %s" %p)
             if p.poll() is None:
-                p.wait();
-                link = mapping_link_process[p]
-                log_file = logs_pool[link]
-                log_file.close()
-                end_time = str(strftime("%a, %d %b %Y %H:%M:%S", time.localtime()))
-                self.logger.debug("UPDATING %s %s for %s at %s" %(link, log_file, self.userDN, end_time))
-                results = self.parse_ftscp_results(log_file.name, link)
-                self.logger.debug("RESULTS %s %s" %( str(results[0]), str(results[1]) ))
-                self.mark_good( results[0], log_file.name)
-                self.mark_failed( results[1], log_file.name)
-
+                start_time = int(time.time())
+                retry = True
+                while (p.poll() is None and retry):
+                    actual_time = int(time.time())
+                    elapsed_time = actual_time - start_time
+                    if elapsed_time < self.tracking_timeout:
+                        self.logger.debug("Waiting ...%s" % elapsed_time)
+                        time.sleep(300)
+                    else:
+                        retry = False
+                if retry:
+                    link = mapping_link_process[p]
+                    log_file = logs_pool[link]
+                    log_file.close()
+                    end_time = str(strftime("%a, %d %b %Y %H:%M:%S", time.localtime()))
+                    self.logger.debug("UPDATING %s %s for %s at %s" %(link, log_file, self.userDN, end_time))
+                    results = self.parse_ftscp_results(log_file.name, link)
+                    self.logger.debug("RESULTS %s %s" %( str(results[0]), str(results[1]) ))
+                    self.mark_good( results[0], log_file.name)
+                    self.mark_failed( results[1], log_file.name)
+                else:
+                    self.logger.info("Process timeout...killing %s" % p.pid)
+                    p.kill()
             else:
                 link = mapping_link_process[p]
                 log_file = logs_pool[link]
