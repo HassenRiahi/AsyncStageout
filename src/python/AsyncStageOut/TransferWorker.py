@@ -266,14 +266,17 @@ class TransferWorker:
                             # Prepare FTS Dashboard metadata
                             dash_report.append(dashboard_report)
                             new_job.append('%s %s' % (source_pfn, destination_pfn))
+                        else:
+                            pass
                     else:
                         self.mark_failed([item])
                 map(tfc_map, active_files)
 
-                jobs[(source, destination)] = new_job
-                jobs_lfn[(source, destination)] = lfn_list
-                jobs_pfn[(source, destination)] = pfn_list
-                jobs_report[(source, destination)] = dash_report
+                if new_job:
+                    jobs[(source, destination)] = new_job
+                    jobs_lfn[(source, destination)] = lfn_list
+                    jobs_pfn[(source, destination)] = pfn_list
+                    jobs_report[(source, destination)] = dash_report
 
             self.logger.debug('ftscp input created for %s (%s jobs)' % (self.user, len(jobs.keys())))
 
