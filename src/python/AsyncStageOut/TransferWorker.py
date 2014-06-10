@@ -521,6 +521,7 @@ class TransferWorker:
         """
         Something failed for these files so increment the retry count
         """
+        updated_lfn = []
         for lfn in files:
             data = {}
             if not isinstance(lfn, dict):
@@ -546,6 +547,7 @@ class TransferWorker:
                 msg += str(ex)
                 msg += str(traceback.format_exc())
                 self.logger.error(msg)
+                continue
             if document['state'] != 'killed':
                 if bad_logfile:
                     to_attach = file(bad_logfile)
@@ -585,6 +587,8 @@ class TransferWorker:
                     updateUri = "/" + self.db.name + "/_design/AsyncTransfer/_update/updateJobs/" + docId
                     updateUri += "?" + urllib.urlencode(data)
                     self.db.makeRequest(uri = updateUri, type = "PUT", decode = False)
+                    updated_lfn.append(docId)
+                    self.logger.debug("Marked failed %s" % docId)
                 except Exception, ex:
                     msg = "Error in updating document in couch"
                     msg += str(ex)
@@ -600,6 +604,7 @@ class TransferWorker:
                     self.logger.error(msg)
                     continue
         self.logger.debug("failed file updated")
+        return updated_lfn
 
     def mark_incomplete(self, files=[]):
         """
