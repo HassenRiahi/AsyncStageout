@@ -15,7 +15,7 @@ from WMCore.Database.CMSCouch import CouchServer
 
 import time
 import logging
-import subprocess, os, errno
+import subprocess, os
 import tempfile
 import datetime
 import traceback
@@ -199,22 +199,19 @@ class TransferWorker:
         return
 
     def source_destinations_by_user(self):
-       """
-       Get all the destinations for a user
-       """
-       query = {'group': True,
-                'startkey':[self.user, self.group, self.role], 'endkey':[self.user, self.group, self.role, {}, {}]}
-                #'stale': 'ok'}
-       try:
-           sites = self.db.loadView('AsyncTransfer', 'ftscp_all', query)
-       except:
-           return []
-
-       def keys_map(dict):
-           return dict['key'][4], dict['key'][3]
-
-       return map(keys_map, sites['rows'])
-
+        """
+        Get all the destinations for a user
+        """
+        query = {'group': True,
+                 'startkey':[self.user, self.group, self.role], 'endkey':[self.user, self.group, self.role, {}, {}]}
+                 #'stale': 'ok'}
+        try:
+            sites = self.db.loadView('AsyncTransfer', 'ftscp_all', query)
+        except:
+            return []
+        def keys_map(dict):
+            return dict['key'][4], dict['key'][3]
+        return map(keys_map, sites['rows'])
 
     def files_for_transfer(self, retry=False):
         """
@@ -235,13 +232,13 @@ class TransferWorker:
                 # complicated, though.
                 query = {'reduce':False,
                      'limit': self.config.max_files_per_transfer,
-                     'key':[self.user, self.group, self.role, destination, source]}
-                     #'stale': 'ok'}
+                     'key':[self.user, self.group, self.role, destination, source],
+                     'stale': 'ok'}
                      # TODO: Set stale to ok since the results has been got in the last call.
                 try:
                     active_files = self.db.loadView('AsyncTransfer', 'ftscp_all', query)['rows']
                 except:
-                    return {}
+                    continue
                 self.logger.debug('%s has %s files to transfer from %s to %s' % (self.user,
                                                                                  len(active_files),
                                                                                  source,
@@ -249,42 +246,52 @@ class TransferWorker:
                 new_job = []
                 lfn_list = []
                 pfn_list = []
-                dash_report =[]
+                dash_report = []
 
                 # take these active files and make a copyjob entry
                 def tfc_map(item):
+                    self.logger.debug('Preparing PFNs...')
                     source_pfn = self.apply_tfc_to_lfn('%s:%s' % (source, item['value']))
-                    destination_pfn = self.apply_tfc_to_lfn('%s:%s' % (destination,
-                                                                       item['value'].replace('store/temp', 'store', 1).replace(\
-                                                                       '.' + item['value'].split('.', 1)[1].split('/', 1)[0], '', 1)))
+                    destination_pfn = ""
+                    if item['value'].startswith("/store/temp/user"):
+                        destination_pfn = self.apply_tfc_to_lfn('%s:%s' % (destination,
+                                                                           item['value'].replace('store/temp', 'store', 1).replace(\
+                                                                           '.' + item['value'].split('.', 1)[1].split('/', 1)[0], '', 1)), False)
+                    else:
+                        destination_pfn = self.apply_tfc_to_lfn('%s:%s' % (destination,
+                                                                           item['value'].replace('store/temp', 'store', 1)), False)
+                    self.logger.debug('PFNs prepared...')
                     if source_pfn and destination_pfn:
                         acquired_file, dashboard_report = self.mark_acquired([item])
+                        self.logger.debug('Files have been marked acquired')
                         if acquired_file:
+                            self.logger.debug('Starting FTS Job creation...')
                             # Prepare Monitor metadata
                             lfn_list.append(item['value'])
                             pfn_list.append(source_pfn)
                             # Prepare FTS Dashboard metadata
                             dash_report.append(dashboard_report)
                             new_job.append('%s %s' % (source_pfn, destination_pfn))
+                            self.logger.debug('FTS job created...')
                         else:
                             pass
                     else:
                         self.mark_failed([item])
+                self.logger.debug('Preparing job...')
                 map(tfc_map, active_files)
-
+                self.logger.debug('Job prepared...')
                 if new_job:
                     jobs[(source, destination)] = new_job
                     jobs_lfn[(source, destination)] = lfn_list
                     jobs_pfn[(source, destination)] = pfn_list
                     jobs_report[(source, destination)] = dash_report
+                    self.logger.debug('FTS job ready for submission over  %s ---> %s ...going to next job' % (source, destination) )
 
             self.logger.debug('ftscp input created for %s (%s jobs)' % (self.user, len(jobs.keys())))
-
             return jobs, jobs_lfn, jobs_pfn, jobs_report
         except:
             self.logger.exception("fail")
-            return {}
-
+            return jobs, jobs_lfn, jobs_pfn, jobs_report
 
     def apply_tfc_to_lfn(self, file):
         """
@@ -376,7 +383,7 @@ class TransferWorker:
                 fts_job['username'] = self.user
                 self.logger.debug("Creating json file %s in %s" % (fts_job, self.dropbox_dir))
                 ftsjob_file = open('%s/Monitor.%s.json' % (self.dropbox_dir, fts_job['FTSJobid'] ), 'w')
-		jsondata = json.dumps(fts_job)
+                jsondata = json.dumps(fts_job)
                 ftsjob_file.write(jsondata)
                 ftsjob_file.close()
                 self.logger.debug("%s ready." % fts_job)
@@ -452,7 +459,7 @@ class TransferWorker:
                         msg += str(traceback.format_exc())
                         self.logger.error(msg)
                         continue
-                    self.logger.debug("Marked acquired %s of %s" % (docId,lfn))
+                    self.logger.debug("Marked acquired %s of %s" % (docId, lfn))
                     lfn_in_transfer.append(lfn)
                     dash_rep = (document['jobid'], document['job_retry_count'], document['workflow'])
                 else:
@@ -474,6 +481,7 @@ class TransferWorker:
                 msg += str(ex)
                 msg += str(traceback.format_exc())
                 self.logger.error(msg)
+                continue
             if document['state'] != 'killed':
                 if good_logfile:
                     to_attach = file(good_logfile)
