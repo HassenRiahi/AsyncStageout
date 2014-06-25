@@ -15,8 +15,7 @@ from WMCore.Database.CMSCouch import CouchServer
 
 import time
 import logging
-import subprocess, os, errno
-import tempfile
+import os
 import datetime
 import traceback
 from WMCore.WMFactory import WMFactory
@@ -24,13 +23,8 @@ import urllib
 import re
 from WMCore.Credential.Proxy import Proxy
 from AsyncStageOut import getHashLfn
-from AsyncStageOut import getFTServer
 from AsyncStageOut import getDNFromUserName
 import json
-#import json
-#import socket
-#import stomp
-from time import strftime
 
 def getProxy(userdn, group, role, defaultDelegation, logger):
     """
