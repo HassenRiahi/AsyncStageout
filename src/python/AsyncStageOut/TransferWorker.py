@@ -27,9 +27,6 @@ from AsyncStageOut import getHashLfn
 from AsyncStageOut import getFTServer
 from AsyncStageOut import getDNFromUserName
 import json
-#import json
-#import socket
-#import stomp
 from time import strftime
 
 def execute_command( command, logger, timeout ):
@@ -483,20 +480,6 @@ class TransferWorker:
                 self.logger.error(msg)
                 continue
             if document['state'] != 'killed':
-                if good_logfile:
-                    to_attach = file(good_logfile)
-                    content = to_attach.read(-1)
-                    retval = self.db.addAttachment(document["_id"],
-                                                   document["_rev"],
-                                                   content,
-                                                   to_attach.name.split('/')[len(to_attach.name.split('/')) - 1],
-                                                   "text/plain")
-                    if retval.get('ok', False) != True:
-                        # Then we have a problem
-                        msg = "Adding an attachment to document failed\n"
-                        msg += str(retval)
-                        msg += "ID: %s, Rev: %s" % (document["_id"], document["_rev"])
-                        self.logger.error(msg)
                 outputLfn = document['lfn'].replace('store/temp', 'store', 1)
                 try:
                     now = str(datetime.datetime.now())
@@ -557,16 +540,6 @@ class TransferWorker:
                 self.logger.error(msg)
                 continue
             if document['state'] != 'killed':
-                if bad_logfile:
-                    to_attach = file(bad_logfile)
-                    content = to_attach.read(-1)
-                    retval = self.db.addAttachment( document["_id"], document["_rev"], content, to_attach.name.split('/')[ len(to_attach.name.split('/')) - 1 ], "text/plain" )
-                    if retval.get('ok', False) != True:
-                        # Then we have a problem
-                        msg = "Adding an attachment to document failed\n"
-                        msg += str(retval)
-                        msg += "ID: %s, Rev: %s" % (document["_id"], document["_rev"])
-                        self.logger.error(msg)
                 now = str(datetime.datetime.now())
                 last_update = time.time()
                 # Prepare data to update the document in couch
