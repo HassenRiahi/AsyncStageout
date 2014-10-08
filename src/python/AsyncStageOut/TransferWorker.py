@@ -111,10 +111,6 @@ class TransferWorker:
         if getattr(self.config, 'cleanEnvironment', False):
             self.cleanEnvironment = 'unset LD_LIBRARY_PATH; unset X509_USER_CERT; unset X509_USER_KEY;'
         # TODO: improve how the worker gets a log
-
-        query = {'group': True,
-                 'startkey':[self.user], 'endkey':[self.user, {}, {}]}#,
-        # 'stale': 'ok'}
         self.logger.debug("Trying to get DN")
         try:
             self.userDN = getDNFromUserName(self.user, self.logger)
@@ -202,8 +198,8 @@ class TransferWorker:
         Get all the destinations for a user
         """
         query = {'group': True,
-                 'startkey':[self.user, self.group, self.role], 'endkey':[self.user, self.group, self.role, {}, {}]}
-                 #'stale': 'ok'}
+                 'startkey':[self.user, self.group, self.role], 'endkey':[self.user, self.group, self.role, {}, {}],
+                 'stale': 'ok'}
         try:
             sites = self.db.loadView('AsyncTransfer', 'ftscp_all', query)
         except:

@@ -149,8 +149,6 @@ class TransferDaemon(BaseWorkerThread):
         following view:
             ftscp?group=true&group_level=1
         """
-        #TODO: Remove stale=ok for now until tested
-        #query = {'group': True, 'group_level': 3, 'stale': 'ok'}
         query = {'group': True, 'group_level': 3}
         try:
             users = db.loadView('AsyncTransfer', 'ftscp_all', query)
