@@ -15,6 +15,8 @@ use ASO::GliteAsync;
 use PHEDEX::Monitoring::Process;
 
 use Data::Dumper;
+$Data::Dumper::Terse=1;
+$Data::Dumper::Indent=0;
 
 sub new {
   my $proto = shift;
@@ -54,6 +56,8 @@ sub new {
 	  FILE_TIMEOUT		 => undef,    # Timeout for file state-changes
 	  JOB_TIMEOUT		 => undef,    # Global job timeout
 	  KEEP_INPUTS		 => 0,        # Set non-zero to keep the input JSON files
+
+	  UNLINK		 => [],       # Array of working JSON files to delete, after reporting...
         );
   $self = \%params;
   bless $self, $class;
@@ -80,7 +84,7 @@ sub new {
 
   $self->{QUEUE} = POE::Queue::Array->new();
   $self->{Q_INTERFACE} = ASO::GliteAsync->new
-                (  
+                (
                   SERVICE => $self->{SERVICE},
                   ME      => 'GLite',
                   VERBOSE => $self->{VERBOSE},
@@ -325,8 +329,8 @@ sub read_directory {
     $lenPFNs = scalar @{$h->{PFNs}};
     for ($i=0; $i<$lenPFNs; ++$i) {
       push @Files, ASO::File->new(
-	  SOURCE	=> $h->{PFNs}[$i],
-	  DESTINATION	=> 'dummy'
+	SOURCE	=> $h->{PFNs}[$i],
+	DESTINATION	=> 'dummy'
 	);
       $self->{FN_MAP}{$h->{PFNs}[$i]} = $h->{LFNs}[$i];
     }
@@ -418,10 +422,10 @@ sub poll_job_postback {
 
   $error = '';
   $command = $arg1->[0];
-  if ($command->{STATUS} ne "0") { 
+  if ($command->{STATUS} ne "0") {
       $error = "ended with status $command->{STATUS}";
-      if ($command->{STDERR}) { 
-          $error .= " and error message: $command->{STDERR}"; 
+      if ($command->{STDERR}) {
+          $error .= " and error message: $command->{STDERR}";
       }
   }
 
@@ -447,10 +451,10 @@ sub poll_job_postback {
 
     # Log any extra info
     foreach ( @{$result->{INFO}} ) { chomp; $job->Log($_) };
-    
+
     # Log any error message
     foreach ( split /\n/, $command->{STDERR} ) { chomp;  $job->Log($_) };
-    
+
     # Only do the verbose logging once
     $job->VERBOSE(0);
   };
@@ -480,7 +484,7 @@ sub poll_job_postback {
       }
 
       if ( ! exists $f->ExitStates->{$s->{STATE}} )
-      { 
+      {
         my $last = $self->{_new_file_states}{$s->{STATE}} || 0;
         if ( time - $last > 300 )
         {
@@ -488,7 +492,7 @@ sub poll_job_postback {
           $self->Alert("Unknown file-state: " . $s->{STATE});
         }
       }
-          
+
       if ( $_ = $f->State( $s->{STATE} ) ) {
         $f->Log($f->Timestamp,"from $_ to ",$f->State);
         $job->Log($f->Timestamp,$f->Source,$f->Source,$f->State );
@@ -524,7 +528,7 @@ sub poll_job_postback {
     }
 
     if ( ! exists $job->ExitStates->{$result->{JOB_STATE}} )
-    { 
+    {
       my $last = $self->{_new_job_states}{$result->{JOB_STATE}} || 0;
       if ( time - $last > 300 )
       {
@@ -561,10 +565,11 @@ sub poll_job_postback {
       my $f = $job->Files->{$_};
       if ( $f->ExitStates->{$f->State} == 0 ) {
         my $oldstate = $f->State('abandoned');
-        $f->Log($f->Timestamp,"from $oldstate to ",$f->State);
+        $f->Log($f->Timestamp," from $oldstate to ",$f->State);
+        $self->Logmsg($job->ID," ",$f->Destination," was $oldstate, now ",$f->State);
         $f->Reason($reason);
         $self->add_file_report($job->{USERNAME},$f);
-      } 
+      }
     }
   }
 
@@ -594,7 +599,7 @@ sub add_file_report {
   if ( $reason eq 'error during  phase: [] ' ) { $reason = ''; }
 
   $self->{REPORTER}{$user}{$file->Source} = {
-       LFN            => delete $self->{FN_MAP}{$file->Source},
+       LFN => delete $self->{FN_MAP}{$file->Source},
        transferStatus => $file->State,
        failure_reason => $reason,
        timestamp      => $file->Timestamp,
@@ -644,6 +649,12 @@ sub notify_reporter {
     }
   }
 
+# Now clear the stack of working files that need to be deleted
+  foreach ( shift @{$self->{UNLINK}} ) {
+    $self->Logmsg('Unlink ',$_);
+    unlink $_;
+  }
+
   $self->Logmsg("Notify Reporter of ",$totlen," files for all users") if $totlen;
   $kernel->delay_set('notify_reporter',$self->{REPORTER_INTERVAL});
 }
@@ -673,8 +684,8 @@ sub report_job {
 # Now I should take detailed action on any errors...
   delete $self->{JOBS}{$job->ID} if $job->{ID};
 
-# Remove the dropbox entry
-  unlink $self->{WORKDIR} . '/Monitor.' . $job->ID . '.json' unless $self->{KEEP_INPUTS};
+# Stack the dropbox entry for unlinking.
+  push @{$self->{UNLINK}}, $self->{WORKDIR} . '/Monitor.' . $job->ID . '.json' unless $self->{KEEP_INPUTS};
 }
 
 sub isKnown

@@ -5,13 +5,22 @@ It populates user_monitoring_db database
 with the details of users transfers from
 files_database.
 """
-import time, datetime
+import os
+import time
+import errno
+import logging
+import datetime
+import traceback
+import subprocess
+from multiprocessing import Pool
+
 from WMCore.Database.CMSCouch import CouchServer
 from WMCore.Services.PhEDEx.PhEDEx import PhEDEx
 from WMCore.Storage.TrivialFileCatalog import readTFC
-from WMCore.WorkerThreads.BaseWorkerThread import BaseWorkerThread
-import subprocess, os, errno
-import time
+
+from AsyncStageOut import getProxy
+from AsyncStageOut import getDNFromUserName
+from AsyncStageOut.BaseDaemon import BaseDaemon
 
 def execute_command( command, logger, timeout ):
     """
@@ -43,23 +52,26 @@ def execute_command( command, logger, timeout ):
     logger.debug('Executing : \n command : %s\n output : %s\n error: %s\n retcode : %s' % (command, stdout, stderr, rc))
     return rc, stdout, stderr
 
-class CleanerDaemon(BaseWorkerThread):
+def remove_files(userProxy, pfn):
+
+    command = 'env -i X509_USER_PROXY=%s gfal-rm -v -t 180 %s'  % \
+              (userProxy, pfn)
+    logging.debug("Running remove command %s" % command)
+    rc, stdout, stderr = execute_command(command, logging, 3600)
+    if rc:
+        logging.info("Deletion command failed with output %s and error %s" %(stdout, stderr))
+    else:
+        logging.info("File Deleted.")
+    return
+
+class CleanerDaemon(BaseDaemon):
     """
     _FilesCleaner_
     Clean transferred outputs from /store/temp.
     """
     def __init__(self, config):
-        BaseWorkerThread.__init__(self)
-        self.config = config.FilesCleaner
-        self.logger.debug('Configuration loaded')
+        BaseDaemon.__init__(self, config, 'FilesCleaner')
 
-        try:
-            self.logger.setLevel(self.config.log_level)
-        except:
-            import logging
-            self.logger = logging.getLogger()
-            self.logger.setLevel(self.config.log_level)
-        self.logger.debug('Configuration loaded')
         config_server = CouchServer(dburl=self.config.config_couch_instance)
         self.config_db = config_server.connectDatabase(self.config.config_database)
         self.logger.debug('Connected to files DB')
@@ -77,12 +89,23 @@ class CleanerDaemon(BaseWorkerThread):
         self.uiSetupScript = getattr(self.config, 'UISetupScript', None)
         self.opsProxy = self.config.opsProxy
         self.site_tfc_map = {}
+        self.defaultDelegation = { 'logger': self.logger,
+                                   'credServerPath' : \
+                                   self.config.credentialDir,
+                                   # It will be moved to be getfrom couchDB
+                                   'myProxySvr': 'myproxy.cern.ch',
+                                   'min_time_left' : getattr(self.config, 'minTimeLeft', 36000),
+                                   'serverDN' : self.config.serverDN,
+                                   'uisource' : self.uiSetupScript,
+                                   'cleanEnvironment' : getattr(self.config, 'cleanEnvironment', False)
+                                 }
         os.environ['X509_USER_PROXY'] = self.opsProxy
         server = CouchServer(dburl=self.config.couch_instance, ckey=self.config.opsProxy, cert=self.config.opsProxy)
         try:
             self.db = server.connectDatabase(self.config.files_database)
         except Exception, e:
             self.logger.exception('A problem occured when connecting to couchDB: %s' % e)
+        self.pool = Pool(processes=5)
 
     def algorithm(self, parameters = None):
         """
@@ -95,7 +118,8 @@ class CleanerDaemon(BaseWorkerThread):
         self.logger.info('%s active sites' % len(sites))
         self.logger.debug('Active sites are: %s' % sites)
         for site in sites:
-            self.site_tfc_map[site] = self.get_tfc_rules(site)
+            if str(site) != 'None' and str(site)!= 'unknown':
+                self.site_tfc_map[site] = self.get_tfc_rules(site)
         if sites:
             query = {}
             try:
@@ -129,20 +153,30 @@ class CleanerDaemon(BaseWorkerThread):
             self.logger.info('LFNs to remove: %s' % len(all_LFNs))
             self.logger.debug('LFNs to remove: %s' % all_LFNs)
 
+            lfn_to_proxy = {}
             for lfnDetails in all_LFNs:
                 lfn = lfnDetails['value']['lfn']
+                user = lfn.split('/')[4].split('.')[0]
+                if not lfn_to_proxy.has_key(user):
+                    valid_proxy = False
+                    try:
+                        self.defaultDelegation['userDN'] = getDNFromUserName(user, self.logger, ckey = self.config.opsProxy, cert = self.config.opsProxy)
+                        valid_proxy, userProxy = getProxy(self.defaultDelegation, self.logger)
+                    except Exception, ex:
+                        msg = "Error getting the user proxy"
+                        msg += str(ex)
+                        msg += str(traceback.format_exc())
+                        self.logger.error(msg)
+                    if valid_proxy:
+                        lfn_to_proxy[user] = userProxy
+                    else:
+                        lfn_to_proxy[user] = self.opsProxy
+                userProxy = lfn_to_proxy[user]
                 location = lfnDetails['value']['location']
                 self.logger.info("Removing %s from %s" %(lfn, location))
                 pfn = self.apply_tfc_to_lfn( '%s:%s' %(location, lfn))
                 if pfn:
-                    command = 'export X509_USER_PROXY=%s ; source %s ; lcg-del -lv %s'  % \
-                              (self.opsProxy, self.uiSetupScript, pfn)
-                    self.logger.debug("Running remove command %s" % command)
-                    rc, stdout, stderr = execute_command(command, self.logger, 3600)
-                    if rc:
-                        self.logger.info("Deletion command failed with output %s and error %s" %(stdout, stderr))
-                    else:
-                        self.logger.info("File Deleted.")
+                    self.pool.apply_async(remove_files, (userProxy, pfn))
                 else:
                     self.logger.info("Removing %s from %s failed when retrieving the PFN" %(lfn, location))
         return
@@ -200,6 +234,16 @@ class CleanerDaemon(BaseWorkerThread):
         Get the TFC regexp for a given site.
         """
         self.phedex.getNodeTFC(site)
-        tfc_file = self.phedex.cacheFileName('tfc', inputdata={'node': site})
-
+        try:
+            tfc_file = self.phedex.cacheFileName('tfc', inputdata={'node': site})
+        except Exception, e:
+            self.logger.exception('A problem occured when getting the TFC regexp: %s' % e)
+            return None
         return readTFC(tfc_file)
+
+    def terminate(self, parameters = None):
+        """
+        Called when thread is being terminated.
+        """
+        self.pool.close()
+        self.pool.join()
